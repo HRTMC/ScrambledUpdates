@@ -1,0 +1,36 @@
+{
+    "version": 3,
+    "configurePresets": [
+        {
+            "name": "vcpkg",
+            "hidden": true,
+            "cacheVariables": {
+                "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+                "VCPKG_TARGET_TRIPLET": "x64-windows-static-md",
+                "VCPKG_BUILD_TYPE": "release"
+            }
+        },
+        {
+            "name": "msvc",
+            "hidden": true,
+            "generator": "Visual Studio 18 2026",
+            "architecture": "x64",
+            "cacheVariables": {
+                "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreadedDLL",
+                "CMAKE_CXX_FLAGS": "/EHsc /MP $penv{CXXFLAGS}"
+            }
+        },
+        {
+            "name": "release",
+            "inherits": ["vcpkg", "msvc"],
+            "binaryDir": "${sourceDir}/build/${presetName}"
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "release",
+            "configurePreset": "release",
+            "configuration": "Release"
+        }
+    ]
+}

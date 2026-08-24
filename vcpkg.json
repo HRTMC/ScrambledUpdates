@@ -1,0 +1,14 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "scrambledupdates",
+  "version": "1.0.0",
+  "description": "",
+  "license": "GPL-3.0-or-later",
+  "dependencies": [
+    "directxmath",
+    "directxtk",
+    "fmt",
+    "spdlog"
+  ],
+  "builtin-baseline": "65c377b6e1363ceed1bfd4f661c6ea3026c9c110"
+}

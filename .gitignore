@@ -1,0 +1,10 @@
+build/
+vcpkg_installed/
+out/
+*.user
+.venv/
+extern/
+docs/
+tools/
+launch_ghidra.bat
+__pycache__/
