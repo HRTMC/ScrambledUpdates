@@ -1,9 +1,11 @@
 #include "Patches.h"
 #include "ScrambledBugs.h"
 
+#include <RE/M/Misc.h>
 #include <REL/Module.h>
 #include <REL/Offset2ID.h>
 #include <REL/Relocation.h>
+#include <SKSE/API.h>
 #include <SKSE/Interfaces.h>
 #include <SKSE/Version.h>
 
@@ -52,6 +54,7 @@ namespace
 	}
 
 	bool g_attempted{ false };
+	bool g_patched{ false };
 
 	std::uint32_t PluginVersion(REX::W32::HMODULE module)
 	{
@@ -110,6 +113,7 @@ namespace
 		AbsoluteJump(base + Patches::HEADER_READ, &HookHeaderRead);
 		AbsoluteJump(base + Patches::ADDRESS_LIBRARY_READ, &HookRead);
 
+		g_patched = true;
 		logger::info("patched ScrambledBugs {} at {}: {} displacements corrected",
 		             version, static_cast<const void*>(base),
 		             std::size(Patches::DISPLACEMENTS));
@@ -159,6 +163,27 @@ namespace
 		spdlog::set_default_logger(std::move(log));
 		spdlog::set_pattern("[%H:%M:%S] [%l] %v"s);
 	}
+
+	bool NeedsPatching()
+	{
+		return REL::Module::get().version() >= SKSE::RUNTIME_SSE_1_7_99;
+	}
+
+	void OnMessage(SKSE::MessagingInterface::Message* message)
+	{
+		if (message->type != SKSE::MessagingInterface::kDataLoaded || g_patched)
+		{
+			return;
+		}
+
+		const auto* warning = REX::W32::GetModuleHandleW(ScrambledBugs::MODULE_NAME)
+			? "ScrambledBugs is installed but could not be patched, so its fixes are "
+			  "not working. See ScrambledUpdates.log"
+			: "ScrambledBugs is not installed, so ScrambledUpdates is inactive";
+
+		logger::error("{}", warning);
+		RE::DebugMessageBox(warning);
+	}
 }
 
 SKSEPluginInfo(
@@ -169,9 +194,20 @@ SKSEPluginInfo(
 	.RuntimeCompatibility = SKSE::PluginDeclaration::RuntimeCompatibility(
 		SKSE::VersionIndependence::AddressLibrary))
 
+SKSEPluginLoad(const SKSE::LoadInterface* skse)
+{
+	if (NeedsPatching())
+	{
+		// false, or Init replaces the logger opened in preload.
+		SKSE::Init(skse, false);
+		SKSE::GetMessagingInterface()->RegisterListener(OnMessage);
+	}
+	return true;
+}
+
 extern "C" __declspec(dllexport) bool SKSEPlugin_Preload(const SKSE::LoadInterface* /*skse*/)
 {
-	if (REL::Module::get().version() < SKSE::RUNTIME_SSE_1_7_99)
+	if (!NeedsPatching())
 	{
 		return true;
 	}
