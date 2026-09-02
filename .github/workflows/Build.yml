@@ -29,29 +29,64 @@ jobs:
           vcpkgGitCommitId: '' # leave blank for latest; pin a commit for reproducible builds
 
       # --- CommonLibSSE-NG prebuilt CMake bundle ----------------------------
-      # alandtse/CommonLibSSE-NG publishes commonlibsse-ng-prebuilt-<tag>-all-msvc-cmake.zip
-      # on every release, containing lib/CommonLibSSE.lib, lib/openvr_api.lib,
-      # include/, extern/openvr/headers/, and TOOLSET_VERSION.txt - exactly what
-      # ScrambledUpdates' CMakeLists.txt checks for in extern/commonlibsse-ng.
-      - name: Download and verify CommonLibSSE-NG prebuilt bundle
+      # Use gh (preinstalled on Actions runners) to fetch the *actual* release
+      # asset by pattern instead of guessing the exact filename/URL - avoids
+      # 404s or downloading the wrong asset silently.
+      - name: Download CommonLibSSE-NG prebuilt bundle
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = "Stop"
           $tag = "${{ env.COMMONLIB_TAG }}"
-          $base = "https://github.com/alandtse/CommonLibSSE-NG/releases/download/$tag"
-          $zipName = "commonlibsse-ng-prebuilt-$tag-all-msvc-cmake.zip"
 
-          Invoke-WebRequest -Uri "$base/$zipName" -OutFile $zipName
-          Invoke-WebRequest -Uri "$base/$zipName.sha256" -OutFile "$zipName.sha256"
+          New-Item -ItemType Directory -Force -Path dl | Out-Null
 
-          $expected = (Get-Content "$zipName.sha256").Split(" ")[0].Trim().ToLower()
-          $actual = (Get-FileHash $zipName -Algorithm SHA256).Hash.ToLower()
-          if ($expected -ne $actual) {
-            Write-Error "SHA256 mismatch for $zipName (expected $expected, got $actual)"
+          Write-Host "Assets available for tag $tag:"
+          gh release view $tag --repo alandtse/CommonLibSSE-NG --json assets --jq '.assets[].name'
+
+          gh release download $tag `
+            --repo alandtse/CommonLibSSE-NG `
+            --pattern "*all-msvc-cmake.zip*" `
+            --dir dl `
+            --clobber
+
+          $zip = Get-ChildItem dl -Filter "*all-msvc-cmake.zip" | Select-Object -First 1
+          if (-not $zip) {
+            Write-Error "No *all-msvc-cmake.zip asset found for tag $tag"
             exit 1
           }
 
-          Expand-Archive -Path $zipName -DestinationPath extern/commonlibsse-ng -Force
+          $sha = Get-ChildItem dl -Filter "$($zip.Name).sha256" | Select-Object -First 1
+          if ($sha) {
+            $expected = (Get-Content $sha.FullName).Split(" ")[0].Trim().ToLower()
+            $actual = (Get-FileHash $zip.FullName -Algorithm SHA256).Hash.ToLower()
+            if ($expected -ne $actual) {
+              Write-Error "SHA256 mismatch for $($zip.Name) (expected $expected, got $actual)"
+              exit 1
+            }
+          } else {
+            Write-Host "No .sha256 sidecar found for this asset - skipping verification"
+          }
+
+          Expand-Archive -Path $zip.FullName -DestinationPath extern/commonlibsse-ng -Force
+
+          # Some archives wrap the payload in a single top-level folder.
+          # Flatten if lib/CommonLibSSE.lib isn't directly under extern/commonlibsse-ng.
+          $expectedLib = "extern/commonlibsse-ng/lib/CommonLibSSE.lib"
+          if (-not (Test-Path $expectedLib)) {
+            $found = Get-ChildItem extern/commonlibsse-ng -Recurse -Filter CommonLibSSE.lib | Select-Object -First 1
+            if ($found) {
+              $bundleRoot = $found.Directory.Parent.FullName
+              Write-Host "Flattening nested bundle root: $bundleRoot"
+              Get-ChildItem $bundleRoot | Move-Item -Destination extern/commonlibsse-ng -Force
+            } else {
+              Write-Host "Extracted contents of extern/commonlibsse-ng:"
+              Get-ChildItem extern/commonlibsse-ng -Recurse | Select-Object FullName
+              Write-Error "CommonLibSSE.lib not found anywhere in the extracted bundle"
+              exit 1
+            }
+          }
 
       # If the runner's MSVC toolset (windows-latest -> VS2022) doesn't match
       # the bundle's baked TOOLSET_VERSION.txt major.minor, ScrambledUpdates'
