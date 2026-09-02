@@ -88,6 +88,26 @@ jobs:
             }
           }
 
+          # Verify TOOLSET_VERSION.txt landed where CMakeLists.txt expects it.
+          # Dump full contents on failure so we can see exactly what shipped
+          # in this asset instead of guessing again.
+          $toolsetFile = "extern/commonlibsse-ng/TOOLSET_VERSION.txt"
+          if (Test-Path $toolsetFile) {
+            Write-Host "TOOLSET_VERSION.txt found, contents:"
+            Get-Content $toolsetFile
+          } else {
+            Write-Host "TOOLSET_VERSION.txt NOT found at $toolsetFile"
+            $anywhere = Get-ChildItem extern/commonlibsse-ng -Recurse -Filter TOOLSET_VERSION.txt
+            if ($anywhere) {
+              Write-Host "But found elsewhere at:"
+              $anywhere | Select-Object FullName
+            }
+            Write-Host "Full extracted tree:"
+            Get-ChildItem extern/commonlibsse-ng -Recurse | Select-Object FullName
+            Write-Error "TOOLSET_VERSION.txt missing from bundle for tag ${tag} - see tree above"
+            exit 1
+          }
+
       # If the runner's MSVC toolset (windows-latest -> VS2022) doesn't match
       # the bundle's baked TOOLSET_VERSION.txt major.minor, ScrambledUpdates'
       # CMakeLists.txt fails fast with a clear FATAL_ERROR - bump
