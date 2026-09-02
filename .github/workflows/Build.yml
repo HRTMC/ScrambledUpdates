@@ -69,24 +69,30 @@ jobs:
             Write-Host "No .sha256 sidecar found for this asset - skipping verification"
           }
 
-          Expand-Archive -Path $zip.FullName -DestinationPath extern/commonlibsse-ng -Force
+          # Extract into a staging folder (not the final destination) so we
+          # can locate the real bundle root and copy it into place cleanly,
+          # regardless of whether the archive wraps things in a subfolder.
+          $staging = "dl/extracted"
+          Expand-Archive -Path $zip.FullName -DestinationPath $staging -Force
 
-          # Some archives wrap the payload in a single top-level folder.
-          # Flatten if lib/CommonLibSSE.lib isn't directly under extern/commonlibsse-ng.
-          $expectedLib = "extern/commonlibsse-ng/lib/CommonLibSSE.lib"
-          if (-not (Test-Path $expectedLib)) {
-            $found = Get-ChildItem extern/commonlibsse-ng -Recurse -Filter CommonLibSSE.lib | Select-Object -First 1
-            if ($found) {
-              $bundleRoot = $found.Directory.Parent.FullName
-              Write-Host "Flattening nested bundle root: $bundleRoot"
-              Get-ChildItem $bundleRoot | Move-Item -Destination extern/commonlibsse-ng -Force
-            } else {
-              Write-Host "Extracted contents of extern/commonlibsse-ng:"
-              Get-ChildItem extern/commonlibsse-ng -Recurse | Select-Object FullName
-              Write-Error "CommonLibSSE.lib not found anywhere in the extracted bundle"
-              exit 1
-            }
+          $foundLib = Get-ChildItem $staging -Recurse -Filter CommonLibSSE.lib | Select-Object -First 1
+          if (-not $foundLib) {
+            Write-Host "Full staging tree:"
+            Get-ChildItem $staging -Recurse | Select-Object FullName
+            Write-Error "CommonLibSSE.lib not found anywhere in the extracted archive"
+            exit 1
           }
+          $bundleRoot = $foundLib.Directory.Parent.FullName
+
+          Write-Host "Bundle root resolved to: $bundleRoot"
+          Write-Host "Bundle root contents:"
+          Get-ChildItem $bundleRoot | Select-Object Name
+
+          if (Test-Path extern/commonlibsse-ng) {
+            Remove-Item extern/commonlibsse-ng -Recurse -Force
+          }
+          New-Item -ItemType Directory -Force -Path extern/commonlibsse-ng | Out-Null
+          Copy-Item -Path "$bundleRoot\*" -Destination extern/commonlibsse-ng -Recurse -Force
 
           # Verify TOOLSET_VERSION.txt landed where CMakeLists.txt expects it.
           # Dump full contents on failure so we can see exactly what shipped
@@ -97,12 +103,7 @@ jobs:
             Get-Content $toolsetFile
           } else {
             Write-Host "TOOLSET_VERSION.txt NOT found at $toolsetFile"
-            $anywhere = Get-ChildItem extern/commonlibsse-ng -Recurse -Filter TOOLSET_VERSION.txt
-            if ($anywhere) {
-              Write-Host "But found elsewhere at:"
-              $anywhere | Select-Object FullName
-            }
-            Write-Host "Full extracted tree:"
+            Write-Host "Full copied tree under extern/commonlibsse-ng:"
             Get-ChildItem extern/commonlibsse-ng -Recurse | Select-Object FullName
             Write-Error "TOOLSET_VERSION.txt missing from bundle for tag ${tag} - see tree above"
             exit 1
